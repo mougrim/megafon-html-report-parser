@@ -1,24 +1,37 @@
+<!doctype html>
 <html lang="ru">
 <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/css/bootstrap.min.css" integrity="sha384-GJzZqFGwb1QTTN6wy59ffF1BuGJpLSa9DkKMp0DgiMDm4iYMj70gZWKYbI706tWS" crossorigin="anonymous">
     <title>Обработка детализированного html-отчета компании Megafon</title>
-    <style>
-        .hidden {
-            display: none;
-        }
-    </style>
 </head>
 <body>
-    <h1>Обработка детализированного html-отчета компании Megafon</h1>
-    <div>
-        <label>Приложите отчет: <input type="file" id="uploaded-report"></label>
+    <div class="container">
+        <h1>Обработка детализированного html-отчета компании Megafon</h1>
+        <div id="wrong-format" class="alert alert-danger d-none">
+            Не правильный формат отчета. Попробуйте другой файл.
+        </div>
+        <div class="form-group">
+            <label for="uploaded-report">Приложите отчет: </label>
+            <input type="file" class="form-control-file" id="uploaded-report">
+        </div>
+        <div class="form-group form-check">
+            <input type="checkbox" class="form-check-input" id="hide-empty" checked>
+            <label class="form-check-label" for="hide-empty"> Скрыть пустые строки</label>
+        </div>
+        <div class="alert alert-primary" role="alert">
+            Внимание! Отчет обрабатывается на вашем устройстве и никуда не передается.
+            Исходный код доступен <a href="https://github.com/mougrim/megafon-html-report-parser" class="alert-link" target="_blank">тут</a>.
+        </div>
+        <div class="alert alert-warning" role="alert">
+            Внимание! Ресурс не имеет никакого отношения к компании Megafon и разрабатывается энтузиастами.
+        </div>
+        <div id="report" class="d-none"></div>
     </div>
-    <div>
-        <label><input type="checkbox" id="hide-empty" checked> Скрыть пустые строки</label>
-    </div>
-    <div>Внимание! Отчет обрабатывается на вашем устройстве и никуда не передается. Исходный код доступен <a href="https://github.com/mougrim/megafon-html-report-parser">тут</a>.</div>
-    <div>Внимание! Ресурс не имеет никакого отношения к компании Megafon и разрабатывается энтузиастами.</div>
-    <div id="wrong-format" class="hidden">Не правильный формат отчета. Попробуйте другой файл.</div>
-    <div id="report" class="hidden"></div>
     <script type="application/javascript">
         {
             class Parser {
@@ -140,6 +153,10 @@
                         };
                         result.push(resultPage);
                         const page = rootDiv.children[pageNumber];
+                        if (!page.childElementCount) {
+                            this.showWrongFormat();
+                            return null;
+                        }
                         const pageColumns = page.children;
                         const pageDescription = pageColumns[1];
                         resultPage.description = pageDescription.children[0].textContent;
@@ -179,6 +196,7 @@
                  */
                 renderReport(report, hideEmpty) {
                     const table = document.createElement('table');
+                    table.className = 'table table-striped table-bordered table-hover table-sm';
                     this.reportDiv.appendChild(table);
                     for (let pageNumber = 0; pageNumber < report.length; pageNumber++) {
                         const page = report[pageNumber];
@@ -186,37 +204,49 @@
                             continue;
                         }
 
+                        const resultPageDescriptionHead = document.createElement('thead');
                         const resultPageDescriptionRow = document.createElement('tr');
+                        resultPageDescriptionRow.className = 'table-success';
                         const resultPageDescriptionColumn = document.createElement('th');
                         resultPageDescriptionColumn.textContent = page.description;
                         resultPageDescriptionColumn.setAttribute('colspan', 12);
                         resultPageDescriptionRow.appendChild(resultPageDescriptionColumn);
-                        table.appendChild(resultPageDescriptionRow);
+                        resultPageDescriptionHead.appendChild(resultPageDescriptionRow);
+                        table.appendChild(resultPageDescriptionHead);
 
+                        const resultPageHead = document.createElement('thead');
+                        resultPageHead.className = 'thead-dark';
                         const resultPageHeadRow = document.createElement('tr');
                         for (let columnNumber = 0; columnNumber < page.columns.length; columnNumber++) {
                             const name = page.columns[columnNumber];
                             const resultPageHeaderColumn = document.createElement('th');
+                            resultPageHeaderColumn.setAttribute('scope', 'col');
                             resultPageHeaderColumn.textContent = name;
                             resultPageHeadRow.appendChild(resultPageHeaderColumn);
                         }
-                        table.appendChild(resultPageHeadRow);
+                        resultPageHead.appendChild(resultPageHeadRow);
+                        table.appendChild(resultPageHead);
 
+                        const resultPageBody = document.createElement('tbody');
                         for (let rowNumber = 0; rowNumber < page.rows.length; rowNumber++) {
                             const row = page['rows'][rowNumber];
                             if (hideEmpty && Object.keys(row).length !== 2 && this.isRowEmpty(row)) {
                                 continue;
                             }
                             const resultPageRow = document.createElement('tr');
-                            table.appendChild(resultPageRow);
+                            resultPageBody.appendChild(resultPageRow);
                             for (let columnNumber = 0; columnNumber < page.columns.length; columnNumber++) {
                                 const name = page.columns[columnNumber];
                                 const value = row[name];
                                 const resultColumn = document.createElement('td');
+                                if (columnNumber === 0) {
+                                    resultColumn.setAttribute('scope', 'row');
+                                }
                                 resultColumn.textContent = value;
                                 resultPageRow.appendChild(resultColumn);
                             }
                         }
+                        table.appendChild(resultPageBody);
                     }
                     this.showReport();
                 }
@@ -242,14 +272,14 @@
                  * @protected
                  */
                 showWrongFormat() {
-                    this.wrongFormatDiv.className = '';
+                    this.wrongFormatDiv.className = 'alert alert-danger';
                 }
 
                 /**
                  * @protected
                  */
                 hideWrongFormat() {
-                    this.wrongFormatDiv.className = 'hidden';
+                    this.wrongFormatDiv.className = 'alert alert-danger d-none';
                 }
 
                 /**
@@ -263,7 +293,7 @@
                  * @protected
                  */
                 hideReport() {
-                    this.reportDiv.className = 'hidden';
+                    this.reportDiv.className = 'd-none';
                 }
             }
 
