@@ -1,0 +1,279 @@
+<html lang="ru">
+<head>
+    <title>Обработка детализированного html-отчета компании Megafon</title>
+    <style>
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Обработка детализированного html-отчета компании Megafon</h1>
+    <div>
+        <label>Приложите отчет: <input type="file" id="uploaded-report"></label>
+    </div>
+    <div>
+        <label><input type="checkbox" id="hide-empty" checked> Скрыть пустые строки</label>
+    </div>
+    <div>Внимание! Отчет обрабатывается на вашем устройстве и никуда не передается. Исходный код доступен <a href="https://github.com/mougrim/megafon-html-report-parser">тут</a>.</div>
+    <div>Внимание! Ресурс не имеет никакого отношения к компании Megafon и разрабатывается энтузиастами.</div>
+    <div id="wrong-format" class="hidden">Не правильный формат отчета. Попробуйте другой файл.</div>
+    <div id="report" class="hidden"></div>
+    <script type="application/javascript">
+        {
+            class Parser {
+                /**
+                 * @public
+                 * @param {HTMLInputElement} uploadedFileInput
+                 * @param {HTMLDivElement} wrongFormatDiv
+                 * @param {HTMLInputElement} hideEmptyCheckbox
+                 * @param {HTMLDivElement} reportDiv
+                 */
+                constructor(uploadedFileInput, wrongFormatDiv, hideEmptyCheckbox, reportDiv) {
+                    /**
+                     * @protected
+                     * @type {HTMLInputElement}
+                     */
+                    this.uploadedFileInput = uploadedFileInput;
+                    /**
+                     * @protected
+                     * @type {HTMLDivElement}
+                     */
+                    this.wrongFormatDiv = wrongFormatDiv;
+                    /**
+                     * @protected
+                     * @type {HTMLInputElement}
+                     */
+                    this.hideEmptyCheckbox = hideEmptyCheckbox;
+                    /**
+                     * @protected
+                     * @type {HTMLDivElement}
+                     */
+                    this.reportDiv = reportDiv;
+                    /**
+                     * @protected
+                     * @type {{}|null}
+                     */
+                    this.lastReport = null;
+                }
+
+                /**
+                 * @public
+                 */
+                init() {
+                    this.uploadedFileInput.onchange = this.onFileIdChosen.bind(this);
+                    this.hideEmptyCheckbox.onchange = this.onHideEmptyChanged.bind(this);
+                }
+
+                /**
+                 * @protected
+                 */
+                onFileIdChosen() {
+                    const files = this.uploadedFileInput.files;
+                    if (!files || !files.length) {
+                        return;
+                    }
+                    this.hideWrongFormat();
+                    this.hideReport();
+                    this.reportDiv.innerHTML = '';
+
+                    const reader = new FileReader();
+
+                    reader.onload = this.onFileLoaded.bind(this);
+                    reader.readAsText(files[0], 'UTF-8');
+                }
+
+                onHideEmptyChanged() {
+                    if (!this.lastReport) {
+                        return;
+                    }
+                    this.reportDiv.innerHTML = '';
+                    this.renderReport(this.lastReport, this.hideEmptyCheckbox.checked);
+                }
+
+                /**
+                 * @protected
+                 * @param {ProgressEvent} event
+                 */
+                onFileLoaded(event) {
+                    this.lastReport = this.parseReport(event.target.result);
+                    if (!this.lastReport) {
+                        return;
+                    }
+                    this.renderReport(this.lastReport, this.hideEmptyCheckbox.checked);
+                }
+
+                /**
+                 * @protected
+                 * @param {String} content
+                 * @return {{}|null}
+                 */
+                parseReport(content) {
+                    const html = document.createElement('html');
+                    html.innerHTML = content;
+
+                    if (html.tagName !== 'HTML') {
+                        this.showWrongFormat();
+                        return null;
+                    }
+                    const bodies = html.getElementsByTagName('body');
+                    if (!bodies.length) {
+                        this.showWrongFormat();
+                        return null;
+                    }
+                    const body = bodies[0];
+                    if (!body.childElementCount) {
+                        this.showWrongFormat();
+                        return null;
+                    }
+                    const rootDiv = body.children[0];
+                    if (!rootDiv.childElementCount) {
+                        this.showWrongFormat();
+                        return null;
+                    }
+                    const result = [];
+                    for (let pageNumber = 0; pageNumber < rootDiv.children.length; pageNumber++) {
+                        const resultPage = {
+                            description: '',
+                            columns: [],
+                            rows: []
+                        };
+                        result.push(resultPage);
+                        const page = rootDiv.children[pageNumber];
+                        const pageColumns = page.children;
+                        const pageDescription = pageColumns[1];
+                        resultPage.description = pageDescription.children[0].textContent;
+                        let columnNumber = 0;
+                        let rowNumber = 0;
+                        for (let elementNumber = 0; elementNumber < pageColumns.length; elementNumber++) {
+                            if ([0, 1].includes(elementNumber)) {
+                                continue;
+                            }
+                            if (pageNumber === 0 && [14, 15].includes(elementNumber)) {
+                                continue;
+                            }
+                            const pageColumn = pageColumns[elementNumber];
+                            const value = pageColumn.childElementCount > 0 ? pageColumn.children[0].textContent : pageColumn.textContent;
+                            if (columnNumber < 12) {
+                                resultPage.columns.push(value);
+                            } else {
+                                if (resultPage.rows[rowNumber] === undefined) {
+                                    resultPage.rows[rowNumber] = {};
+                                }
+                                resultPage.rows[rowNumber][resultPage.columns[columnNumber % 12]] = value;
+                            }
+                            columnNumber++;
+                            if (columnNumber > 12 && columnNumber % 12 === 0) {
+                                rowNumber++;
+                            }
+                        }
+                        pageNumber++;
+                    }
+                    return result;
+                }
+
+                /**
+                 * @protected
+                 * @property {{}} report
+                 * @property {Boolean} hideEmpty
+                 */
+                renderReport(report, hideEmpty) {
+                    const table = document.createElement('table');
+                    this.reportDiv.appendChild(table);
+                    for (let pageNumber = 0; pageNumber < report.length; pageNumber++) {
+                        const page = report[pageNumber];
+                        if (hideEmpty && !this.hasNotEmptyRows(page.rows)) {
+                            continue;
+                        }
+
+                        const resultPageDescriptionRow = document.createElement('tr');
+                        const resultPageDescriptionColumn = document.createElement('th');
+                        resultPageDescriptionColumn.textContent = page.description;
+                        resultPageDescriptionColumn.setAttribute('colspan', 12);
+                        resultPageDescriptionRow.appendChild(resultPageDescriptionColumn);
+                        table.appendChild(resultPageDescriptionRow);
+
+                        const resultPageHeadRow = document.createElement('tr');
+                        for (let columnNumber = 0; columnNumber < page.columns.length; columnNumber++) {
+                            const name = page.columns[columnNumber];
+                            const resultPageHeaderColumn = document.createElement('th');
+                            resultPageHeaderColumn.textContent = name;
+                            resultPageHeadRow.appendChild(resultPageHeaderColumn);
+                        }
+                        table.appendChild(resultPageHeadRow);
+
+                        for (let rowNumber = 0; rowNumber < page.rows.length; rowNumber++) {
+                            const row = page['rows'][rowNumber];
+                            if (hideEmpty && Object.keys(row).length !== 2 && this.isRowEmpty(row)) {
+                                continue;
+                            }
+                            const resultPageRow = document.createElement('tr');
+                            table.appendChild(resultPageRow);
+                            for (let columnNumber = 0; columnNumber < page.columns.length; columnNumber++) {
+                                const name = page.columns[columnNumber];
+                                const value = row[name];
+                                const resultColumn = document.createElement('td');
+                                resultColumn.textContent = value;
+                                resultPageRow.appendChild(resultColumn);
+                            }
+                        }
+                    }
+                    this.showReport();
+                }
+
+                hasNotEmptyRows(rows) {
+                    for (let rowNumber = 0; rowNumber < rows.length; rowNumber++) {
+                        const row = rows[rowNumber];
+                        if (Object.keys(row).length === 2) {
+                            continue;
+                        }
+                        if (!this.isRowEmpty(row)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                isRowEmpty(row) {
+                    return row['стоимость, руб.'] === '0,00';
+                }
+
+                /**
+                 * @protected
+                 */
+                showWrongFormat() {
+                    this.wrongFormatDiv.className = '';
+                }
+
+                /**
+                 * @protected
+                 */
+                hideWrongFormat() {
+                    this.wrongFormatDiv.className = 'hidden';
+                }
+
+                /**
+                 * @protected
+                 */
+                showReport() {
+                    this.reportDiv.className = '';
+                }
+
+                /**
+                 * @protected
+                 */
+                hideReport() {
+                    this.reportDiv.className = 'hidden';
+                }
+            }
+
+            const uploadedFileInput = document.getElementById('uploaded-report');
+            const wrongFormatDiv = document.getElementById('wrong-format');
+            const hideEmptyCheckbox = document.getElementById('hide-empty');
+            const reportDiv = document.getElementById('report');
+            const parser = new Parser(uploadedFileInput, wrongFormatDiv, hideEmptyCheckbox, reportDiv);
+            parser.init();
+        }
+    </script>
+</body>
+</html>
